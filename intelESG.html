@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>intelESG - Live Data Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader {
+            width: 20px; height: 20px; border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: #ffffff;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #modal-backdrop {
+            transition: opacity 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <nav class="flex justify-between items-center mb-10">
+            <a href="#" class="text-3xl font-bold text-gray-900 hover:opacity-80 transition-opacity">intel<span class="text-teal-500">ESG</span></a>
+            <div id="nav-links" class="space-x-6 text-gray-600 font-semibold">
+                <!-- Nav links will be dynamically inserted here -->
+            </div>
+        </nav>
+
+        <header class="text-center mb-10">
+            <h1 id="page-title" class="text-4xl md:text-5xl font-bold text-gray-900"></h1>
+            <p id="page-subtitle" class="text-xl text-gray-600 mt-2"></p>
+        </header>
+        <main id="content-area"></main>
+    </div>
+
+    <footer class="bg-white mt-16 py-8 border-t">
+        <div class="container mx-auto text-center text-gray-600">
+            <p>&copy; 2025 intelESG. All rights reserved.</p>
+            <p class="mt-2">Have questions or want to contribute? <a href="mailto:aintelesg@gmail.com" class="text-teal-600 font-semibold hover:underline">Contact Us</a>.</p>
+        </div>
+    </footer>
+
+    <!-- Universal Modal -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+        <div id="modal" class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+             <!-- Modal content is rendered by JS -->
+        </div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+        // ===================================================================
+        // == PASTE YOUR SUPABASE KEYS HERE ==
+        // ===================================================================
+        const SUPABASE_URL = 'https://ppvyvoinzrvboldqpkrw.supabase.co'; // <-- PASTE YOUR URL HERE
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwdnl2b2luenJ2Ym9sZHFwa3J3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQyMTI2ODcsImV4cCI6MjA2OTc4ODY4N30.t0se-6H5zehz8dF-ROlhAXeGTL95Q0C4o0QHa3hvR68'; // <-- PASTE YOUR ANON KEY HERE
+        // ===================================================================
+
+        const contentArea = document.getElementById('content-area');
+        const pageTitle = document.getElementById('page-title');
+        const pageSubtitle = document.getElementById('page-subtitle');
+        const navLinks = document.getElementById('nav-links');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const modal = document.getElementById('modal');
+
+        let currentUser = null;
+        let userProfile = null;
+
+        const renderLoader = () => contentArea.innerHTML = `<div class="text-center py-10"><div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div><p class="mt-4 text-gray-600 font-semibold">Loading...</p></div>`;
+        const renderError = (message) => contentArea.innerHTML = `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow-md" role="alert"><p class="font-bold">An Error Occurred</p><p>${message}</p></div>`;
+
+        async function main() {
+            if (SUPABASE_URL.includes('YOUR_SUPABASE_URL')) {
+                renderError('Configuration Needed: Please paste your Supabase URL and Anon Key into the script.');
+                return;
+            }
+            const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            
+            const { data: { session } } = await supabase.auth.getSession();
+            currentUser = session?.user || null;
+            if (currentUser) {
+                const { data } = await supabase.from('profiles').select('role').eq('id', currentUser.id).single();
+                userProfile = data;
+            } else {
+                userProfile = null;
+            }
+            await router(supabase); 
+
+            supabase.auth.onAuthStateChange(async (event, session) => {
+                const newUserId = session?.user?.id || null;
+                const currentUserId = currentUser?.id || null;
+                
+                if (newUserId !== currentUserId) {
+                    currentUser = session?.user || null;
+                     if (currentUser) {
+                        const { data } = await supabase.from('profiles').select('role').eq('id', currentUser.id).single();
+                        userProfile = data;
+                    } else {
+                        userProfile = null;
+                    }
+                    await router(supabase); 
+                }
+            });
+        }
+
+        async function router(supabase) {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const page = params.get('page') || 'home';
+            const id = params.get('id');
+
+            updateNav(supabase);
+            renderLoader();
+
+            switch(page) {
+                case 'login':
+                    pageTitle.textContent = "Login"; pageSubtitle.textContent = "Access your account";
+                    renderLoginForm(supabase);
+                    break;
+                case 'signup':
+                    pageTitle.textContent = "Sign Up"; pageSubtitle.textContent = "Create a new account";
+                    renderSignupForm(supabase);
+                    break;
+                case 'admin':
+                    pageTitle.textContent = "Admin"; pageSubtitle.textContent = "Add New Entity";
+                    await renderAdminForm(supabase);
+                    break;
+                case 'edit':
+                    pageTitle.textContent = "Admin"; pageSubtitle.textContent = "Edit Entity";
+                    await renderAdminForm(supabase, id);
+                    break;
+                case 'manage':
+                    pageTitle.textContent = "Admin"; pageSubtitle.textContent = "Management Panel";
+                    await renderManagementPage(supabase);
+                    break;
+                case 'detail':
+                    pageTitle.textContent = "Entity Detail"; pageSubtitle.textContent = "In-depth ESG Performance";
+                    await renderDetailPage(supabase, id);
+                    break;
+                case 'about':
+                    pageTitle.textContent = "About intelESG"; pageSubtitle.textContent = "Our Mission and Vision";
+                    renderAboutPage();
+                    break;
+                case 'contact':
+                    pageTitle.textContent = "Contact Us"; pageSubtitle.textContent = "Get in Touch";
+                    renderContactPage();
+                    break;
+                case 'request-update':
+                    pageTitle.textContent = "Request Update"; pageSubtitle.textContent = "Suggest a correction or addition to our data.";
+                    await renderRequestUpdateForm(supabase, id);
+                    break;
+                case 'my-qc':
+                    pageTitle.textContent = "My QC Replies"; pageSubtitle.textContent = "Replies from the Admin to your quality control requests.";
+                    await renderMyQCPage(supabase);
+                    break;
+                default:
+                    pageTitle.textContent = "Global Entity Directory"; pageSubtitle.textContent = "Search and filter through our comprehensive ESG database.";
+                    await renderHomePage(supabase, params);
+            }
+        }
+        
+        function updateNav(supabase) {
+            let analystLinks = '';
+            if (userProfile?.role === 'analyst') {
+                analystLinks = `<a href="#page=my-qc" class="hover:text-teal-500 transition-colors">My QC Replies</a>`;
+            }
+
+            if (currentUser) {
+                navLinks.innerHTML = `
+                    <a href="#" class="hover:text-teal-500 transition-colors">Home</a>
+                    <a href="#page=about" class="hover:text-teal-500 transition-colors">About</a>
+                    ${analystLinks}
+                    <span class="text-gray-400">|</span>
+                    <span class="font-normal text-sm">Logged in as ${currentUser.email} (${userProfile?.role || 'user'})</span>
+                    <button id="logout-btn" class="font-semibold text-red-500 hover:underline">Logout</button>
+                `;
+                document.getElementById('logout-btn').addEventListener('click', async () => {
+                    await supabase.auth.signOut();
+                    window.location.hash = '';
+                    location.reload(); 
+                });
+            } else {
+                navLinks.innerHTML = `
+                    <a href="#" class="hover:text-teal-500 transition-colors">Home</a>
+                    <a href="#page=about" class="hover:text-teal-500 transition-colors">About</a>
+                    <a href="#page=contact" class="hover:text-teal-500 transition-colors">Contact</a>
+                    <a href="#page=login" class="bg-teal-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 transition-all">Login</a>
+                `;
+            }
+        }
+
+        function renderLoginForm(supabase) {
+            contentArea.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-md mx-auto">
+                    <form id="login-form" class="space-y-6">
+                        <div><label class="block text-sm font-medium">Email</label><input required type="email" name="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                        <div><label class="block text-sm font-medium">Password</label><input required type="password" name="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700">Log In</button>
+                        <p class="text-center text-sm">Don't have an account? <a href="#page=signup" class="font-semibold text-teal-600 hover:underline">Sign up</a></p>
+                    </form>
+                </div>`;
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const { email, password } = Object.fromEntries(formData.entries());
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) alert(error.message);
+                else window.location.hash = '';
+            });
+        }
+        
+        function renderSignupForm(supabase) {
+             contentArea.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-md mx-auto">
+                    <form id="signup-form" class="space-y-6">
+                        <div><label class="block text-sm font-medium">Email</label><input required type="email" name="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                        <div><label class="block text-sm font-medium">Password</label><input required type="password" name="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700">Sign Up</button>
+                        <p class="text-center text-sm">Already have an account? <a href="#page=login" class="font-semibold text-teal-600 hover:underline">Log in</a></p>
+                    </form>
+                </div>`;
+            document.getElementById('signup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const { email, password } = Object.fromEntries(formData.entries());
+                const { error } = await supabase.auth.signUp({ email, password });
+                if (error) {
+                    alert(error.message);
+                } else {
+                    alert('Signup successful! Please check your email to confirm your account.');
+                    window.location.hash = '#page=login';
+                }
+            });
+        }
+
+        async function renderHomePage(supabase, params) {
+            try {
+                const currentPage = parseInt(params.get('p') || '1');
+                const searchQuery = params.get('q') || '';
+                const industryFilterValue = params.get('industry') || '';
+                const countryFilterValue = params.get('country') || '';
+                const itemsPerPage = 30;
+                const from = (currentPage - 1) * itemsPerPage;
+                const to = from + itemsPerPage - 1;
+
+                const [entitiesRes, filtersRes] = await Promise.all([
+                    (() => {
+                        let query = supabase.from('Entities').select('*', { count: 'exact' });
+                        if (searchQuery) query = query.ilike('company_name', `%${searchQuery}%`);
+                        if (industryFilterValue) query = query.eq('primary_naics_industry', industryFilterValue);
+                        if (countryFilterValue) query = query.eq('company_country', countryFilterValue);
+                        return query.order('company_name').range(from, to);
+                    })(),
+                    supabase.rpc('get_distinct_filters')
+                ]);
+                
+                if (entitiesRes.error) throw entitiesRes.error;
+                if (filtersRes.error) throw filtersRes.error;
+                
+                const { data: allEntities, count } = entitiesRes;
+                const { industries, countries } = filtersRes.data[0];
+
+                const industryOptions = (industries || []).map(i => `<option value="${i}" ${industryFilterValue === i ? 'selected' : ''}>${i}</option>`).join('');
+                const countryOptions = (countries || []).map(c => `<option value="${c}" ${countryFilterValue === c ? 'selected' : ''}>${c}</option>`).join('');
+                const totalPages = Math.ceil(count / itemsPerPage);
+
+                const cardsHtml = allEntities.map(entity => `<a href="#page=detail&id=${entity.id}" class="block bg-white p-6 rounded-xl shadow-md hover:shadow-xl hover:scale-105 transition-all"><h2 class="text-2xl font-bold text-gray-900">${entity.company_name}</h2><p class="text-gray-500">${entity.company_country || 'N/A'}</p></a>`).join('');
+                
+                const paginationHtml = `
+                    <div class="flex justify-between items-center mt-8">
+                        <a href="#page=home&p=${currentPage - 1}&q=${searchQuery}&industry=${industryFilterValue}&country=${countryFilterValue}" class="font-semibold text-teal-600 ${currentPage <= 1 ? 'opacity-50 pointer-events-none' : 'hover:underline'}">&larr; Previous</a>
+                        <span class="text-gray-600">Page ${currentPage} of ${totalPages}</span>
+                        <a href="#page=home&p=${currentPage + 1}&q=${searchQuery}&industry=${industryFilterValue}&country=${countryFilterValue}" class="font-semibold text-teal-600 ${currentPage >= totalPages ? 'opacity-50 pointer-events-none' : 'hover:underline'}">Next &rarr;</a>
+                    </div>`;
+
+                const adminButtons = userProfile?.role === 'admin' ? `
+                    <a href="#page=admin" title="Add New Entity" class="w-full text-center bg-teal-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 transition-all">+ Add</a>
+                    <a href="#page=manage" title="Management Panel" class="w-full text-center bg-gray-700 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-gray-800 transition-all">⚙️ Manage</a>
+                ` : '';
+
+                contentArea.innerHTML = `
+                    <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                            <div class="md:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="search-input" class="block text-sm font-medium text-gray-700">Search by Name</label>
+                                    <input id="search-input" type="search" value="${searchQuery}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., Apple Inc.">
+                                </div>
+                                <div>
+                                    <label for="industry-filter" class="block text-sm font-medium text-gray-700">Filter by Industry</label>
+                                    <select id="industry-filter" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"><option value="">All Industries</option>${industryOptions}</select>
+                                </div>
+                                <div>
+                                    <label for="country-filter" class="block text-sm font-medium text-gray-700">Filter by Country</label>
+                                    <select id="country-filter" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"><option value="">All Countries</option>${countryOptions}</select>
+                                </div>
+                            </div>
+                            <div class="flex justify-center gap-2">${adminButtons}</div>
+                        </div>
+                    </div>
+                    <div id="entity-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${cardsHtml || '<p class="text-gray-600 col-span-full text-center">No entities match your filters.</p>'}</div>
+                    ${count > itemsPerPage ? paginationHtml : ''}
+                `;
+
+                const handleFilter = () => {
+                    const newQuery = document.getElementById('search-input').value;
+                    const newIndustry = document.getElementById('industry-filter').value;
+                    const newCountry = document.getElementById('country-filter').value;
+                    window.location.hash = `#page=home&p=1&q=${encodeURIComponent(newQuery)}&industry=${encodeURIComponent(newIndustry)}&country=${encodeURIComponent(newCountry)}`;
+                };
+
+                document.getElementById('search-input').addEventListener('keyup', (e) => { if (e.key === 'Enter') handleFilter(); });
+                document.getElementById('industry-filter').addEventListener('change', handleFilter);
+                document.getElementById('country-filter').addEventListener('change', handleFilter);
+
+            } catch (e) { renderError(`Error fetching entities: ${e.message}`); }
+        }
+        
+        async function renderDetailPage(supabase, id) {
+             try {
+                const [entityRes, dataPointsRes] = await Promise.all([
+                    supabase.from('Entities').select('*').eq('id', id).single(),
+                    supabase.from('detailed_datapoints').select('*').eq('entity_id', id)
+                ]);
+                if (entityRes.error) throw entityRes.error;
+                if (dataPointsRes.error) throw dataPointsRes.error;
+                
+                const entity = entityRes.data;
+                const dataPoints = dataPointsRes.data;
+                
+                const requestButton = `<a href="#page=request-update&id=${id}" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Request Update</a>`;
+                let editButton = '';
+                if (userProfile?.role === 'admin') {
+                    editButton = `<a href="#page=edit&id=${id}" class="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600">Edit Entity (Admin)</a>`;
+                } else if (userProfile?.role === 'analyst') {
+                    editButton = `<a href="#page=edit&id=${id}" class="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600">Edit Data (Analyst)</a>`;
+                } else if (currentUser) {
+                    editButton = requestButton;
+                }
+
+                const dataPointsHtml = dataPoints.map(dp => `
+                    <tr class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="py-3 px-4 font-semibold text-gray-700">${dp.kpi_name}</td>
+                        <td class="py-3 px-4 text-gray-900 text-right">${parseFloat(dp.value).toLocaleString()}</td>
+                        <td class="py-3 px-4 text-gray-500">${dp.unit}</td>
+                        <td class="py-3 px-4 text-gray-500">${dp.year}</td>
+                    </tr>`).join('') || `<tr><td colspan="4" class="py-4 text-center text-gray-500">No ESG data points found.</td></tr>`;
+
+                contentArea.innerHTML = `
+                    <div class="bg-white p-8 rounded-2xl shadow-lg">
+                        <div class="flex justify-between items-start mb-6">
+                            <div><h2 class="text-3xl font-bold text-gray-900">${entity.company_name}</h2><p class="text-lg text-gray-500">${entity.company_country}</p></div>
+                            <div>
+                                <a href="#" class="text-teal-600 font-semibold hover:underline mr-4">&larr; Back to Directory</a>
+                                ${editButton}
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div>
+                                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Data Visualization</h3>
+                                <div class="bg-gray-50 p-4 rounded-lg border"><canvas id="dataChart"></canvas></div>
+                            </div>
+                            <div>
+                                <h3 class="text-2xl font-semibold text-gray-800 mb-4">All ESG Data Points</h3>
+                                <div class="overflow-x-auto rounded-lg border border-gray-200 h-96">
+                                    <table class="min-w-full bg-white"><thead class="bg-gray-50 sticky top-0"><tr>
+                                        <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KPI</th>
+                                        <th class="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
+                                        <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                        <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
+                                    </tr></thead><tbody class="divide-y divide-gray-200">${dataPointsHtml}</tbody></table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                renderDataChart(dataPoints);
+
+             } catch (e) { renderError(`Error fetching entity details: ${e.message}`); }
+        }
+
+        function renderAboutPage() {
+            pageTitle.textContent = "About intelESG";
+            pageSubtitle.textContent = "Our Mission to Bring Transparency to ESG Data";
+            contentArea.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-4xl mx-auto text-lg text-gray-700 leading-relaxed">
+                    <p class="mb-4"><strong>intelESG</strong> was born from a simple yet powerful idea: that clear, accessible, and reliable Environmental, Social, and Governance (ESG) data is essential for a sustainable future. In a world of complex corporate reports and fragmented information, our mission is to provide a centralized platform that empowers investors, researchers, and the public to make informed decisions.</p>
+                </div>`;
+        }
+
+        function renderContactPage() {
+            pageTitle.textContent = "Contact Us";
+            pageSubtitle.textContent = "We'd love to hear from you.";
+            contentArea.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-4xl mx-auto text-center">
+                    <h2 class="text-2xl font-semibold mb-4">Get in Touch</h2>
+                    <a href="mailto:aintelesg@gmail.com" class="inline-block bg-teal-600 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:bg-teal-700 transition-all">
+                        Email Us: aintelesg@gmail.com
+                    </a>
+                </div>`;
+        }
+
+        async function renderAdminForm(supabase, entityId = null) {
+            if (userProfile?.role !== 'admin' && userProfile?.role !== 'analyst') {
+                return renderError("You do not have permission to access this page.");
+            }
+            try {
+                const [kpisRes, entityRes, dataPointsRes] = await Promise.all([
+                    supabase.from('KPIs').select('*').order('category').order('kpi_name'),
+                    entityId ? supabase.from('Entities').select('*').eq('id', entityId).single() : Promise.resolve({ data: null }),
+                    entityId ? supabase.from('DataPoints').select('*').eq('entity_id', entityId) : Promise.resolve({ data: [] })
+                ]);
+                if (kpisRes.error) throw kpisRes.error;
+                if (entityRes.error) throw entityRes.error;
+                if (dataPointsRes.error) throw dataPointsRes.error;
+                
+                const allKpis = kpisRes.data;
+                const entity = entityRes.data;
+                const existingDataPoints = new Map(dataPointsRes.data.map(dp => [dp.kpi_id, dp]));
+                const isAdmin = userProfile?.role === 'admin';
+
+                const kpisByCategory = allKpis.reduce((acc, kpi) => {
+                    (acc[kpi.category] = acc[kpi.category] || []).push(kpi);
+                    return acc;
+                }, {});
+
+                let dataPointsHtml = '';
+                for (const category in kpisByCategory) {
+                    dataPointsHtml += `<h3 class="text-lg font-semibold text-gray-700 mt-6 mb-2">${category}</h3>`;
+                    dataPointsHtml += kpisByCategory[category].map(kpi => {
+                        const dp = existingDataPoints.get(kpi.id) || {};
+                        return `
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 p-3 border rounded-md items-center" data-kpi-id="${kpi.id}">
+                            <div class="md:col-span-2 font-semibold text-sm">${kpi.kpi_name}</div>
+                            <div><input type="number" value="${dp.year || ''}" class="data-point-year w-full rounded-md border-gray-300 shadow-sm" placeholder="Year"></div>
+                            <div><input type="text" value="${dp.value || ''}" class="data-point-value w-full rounded-md border-gray-300 shadow-sm" placeholder="Value"></div>
+                            <div><input type="url" value="${dp.source_url || ''}" class="data-point-source w-full rounded-md border-gray-300 shadow-sm" placeholder="Source URL"></div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" value="${dp.page_no || ''}" class="data-point-page w-full rounded-md border-gray-300 shadow-sm" placeholder="Page">
+                                <button type="button" data-kpi-name="${kpi.kpi_name}" class="qc-request-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold p-2 rounded-md">QC</button>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+
+                contentArea.innerHTML = `
+                    <div class="bg-white p-8 rounded-2xl shadow-lg max-w-6xl mx-auto">
+                        <form id="admin-form">
+                            <div class="space-y-8">
+                                <div>
+                                    <h2 class="text-2xl font-semibold text-gray-800 border-b pb-2 mb-4">Entity Details</h2>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div><label class="block text-sm font-medium">Company Name</label><input ${!isAdmin ? 'disabled' : ''} required name="company_name" value="${entity?.company_name || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                        <div><label class="block text-sm font-medium">Company Type</label><input ${!isAdmin ? 'disabled' : ''} name="company_type" value="${entity?.company_type || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                        <div><label class="block text-sm font-medium">Country</label><input ${!isAdmin ? 'disabled' : ''} name="company_country" value="${entity?.company_country || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                        <div><label class="block text-sm font-medium">Region</label><input ${!isAdmin ? 'disabled' : ''} name="company_region" value="${entity?.company_region || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                        <div><label class="block text-sm font-medium">Sector</label><input ${!isAdmin ? 'disabled' : ''} name="primary_naics_sector" value="${entity?.primary_naics_sector || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                        <div><label class="block text-sm font-medium">Industry</label><input ${!isAdmin ? 'disabled' : ''} name="primary_naics_industry" value="${entity?.primary_naics_industry || ''}" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm ${!isAdmin ? 'bg-gray-100' : ''}"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h2 class="text-2xl font-semibold text-gray-800 border-b pb-2 mb-4">Data Points</h2>
+                                    <div id="data-points-container" class="space-y-2">${dataPointsHtml}</div>
+                                </div>
+                            </div>
+                            <div class="mt-8 pt-5 border-t flex justify-end items-center gap-4">
+                                <a href="${entityId ? `#page=detail&id=${entityId}` : '#'}" class="text-gray-600 hover:underline">Cancel</a>
+                                <button type="submit" id="submit-btn" class="bg-teal-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-teal-700 flex items-center gap-2">
+                                    <span id="submit-btn-text">${entityId ? 'Update Data' : 'Save Entity'}</span>
+                                    <div id="submit-loader" class="hidden loader"></div>
+                                </button>
+                            </div>
+                        </form>
+                    </div>`;
+
+                document.querySelectorAll('.qc-request-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const kpiRow = e.target.closest('[data-kpi-id]');
+                        const kpiId = kpiRow.dataset.kpiId;
+                        const kpiName = e.target.dataset.kpiName;
+                        renderQCModal(supabase, entity.id, kpiId, entity.company_name, kpiName);
+                    });
+                });
+                
+                document.getElementById('admin-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    await handleFormSubmit(supabase, entityId);
+                });
+
+            } catch (error) { renderError(`Error rendering form: ${error.message}`); }
+        }
+        
+        async function renderManagementPage(supabase) {
+            if (userProfile?.role !== 'admin') {
+                return renderError("You do not have permission to access this page.");
+            }
+            try {
+                const [kpis, frameworks, requests] = await Promise.all([
+                    supabase.from('KPIs').select('*').order('kpi_name'),
+                    supabase.from('Frameworks').select('*').order('name'),
+                    supabase.from('update_requests').select('*, Entities(company_name), KPIs(kpi_name)').eq('status', 'pending')
+                ]);
+                if (kpis.error) throw kpis.error;
+                if (frameworks.error) throw frameworks.error;
+                if (requests.error) throw requests.error;
+                const kpiOptions = kpis.data.map(k => `<option value="${k.id}">${k.kpi_name}</option>`).join('');
+                const frameworkOptions = frameworks.data.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+                
+                const requestsHtml = requests.data.map(req => `
+                    <div class="p-4 border rounded-md">
+                        <p><strong>Entity:</strong> ${req.Entities.company_name}</p>
+                        <p><strong>KPI:</strong> ${req.KPIs.kpi_name}</p>
+                        <p><strong>Suggested Value:</strong> ${req.new_value}</p>
+                        <div class="mt-2 flex gap-2">
+                            <button data-req-id="${req.id}" data-entity-id="${req.entity_id}" data-kpi-id="${req.kpi_id}" data-value="${req.new_value}" class="approve-btn bg-green-500 text-white px-2 py-1 text-sm rounded hover:bg-green-600">Approve</button>
+                            <button data-req-id="${req.id}" class="reject-btn bg-red-500 text-white px-2 py-1 text-sm rounded hover:bg-red-600">Reject</button>
+                        </div>
+                    </div>
+                `).join('') || '<p class="text-sm text-gray-500">No pending requests.</p>';
+
+                contentArea.innerHTML = `
+                    <div class="bg-white p-8 rounded-2xl shadow-lg max-w-6xl mx-auto">
+                        <div class="flex justify-between items-center border-b pb-2 mb-6">
+                            <h2 class="text-2xl font-semibold text-gray-800">Management Panel</h2>
+                            <a href="#" class="text-teal-600 font-semibold hover:underline">&larr; Back to Directory</a>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                           <div class="space-y-8">
+                                <form id="new-kpi-form" class="p-6 bg-gray-50 rounded-lg border">
+                                    <h3 class="text-xl font-semibold mb-4">Add New KPI</h3>
+                                    <div class="space-y-4">
+                                        <input name="kpi_name" required class="w-full rounded-md" type="text" placeholder="KPI Name">
+                                        <input name="kpi_id_string" required class="w-full rounded-md" type="text" placeholder="Unique ID (e.g., water_consumption)">
+                                        <input name="unit" required class="w-full rounded-md" type="text" placeholder="Unit (e.g., cubic meters)">
+                                        <select name="category" required class="w-full rounded-md"><option value="Environmental">Environmental</option><option value="Social">Social</option><option value="Governance">Governance</option></select>
+                                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-2 rounded-lg hover:bg-teal-700">Add KPI</button>
+                                    </div>
+                                </form>
+                                <form id="new-framework-form" class="p-6 bg-gray-50 rounded-lg border">
+                                    <h3 class="text-xl font-semibold mb-4">Add New Framework</h3>
+                                    <div class="space-y-4">
+                                        <input name="name" required class="w-full rounded-md" type="text" placeholder="Framework Name">
+                                        <textarea name="description" class="w-full rounded-md" placeholder="Description..."></textarea>
+                                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-2 rounded-lg hover:bg-teal-700">Add Framework</button>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="p-6 bg-gray-50 rounded-lg border">
+                                <h3 class="text-xl font-semibold mb-4">Link KPI to Framework(s)</h3>
+                                <form id="new-link-form" class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium">Framework(s)</label>
+                                        <select name="framework_id" required multiple class="w-full rounded-md h-32 border-gray-300">${frameworkOptions}</select>
+                                        <p class="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple.</p>
+                                    </div>
+                                    <div><label class="block text-sm font-medium">KPI</label><select name="kpi_id" required class="w-full rounded-md border-gray-300">${kpiOptions}</select></div>
+                                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700">Create Link(s)</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="mt-8 pt-5 border-t">
+                            <h3 class="text-xl font-semibold mb-4">Pending Update Requests</h3>
+                            <div id="requests-container" class="space-y-4">${requestsHtml}</div>
+                        </div>
+                    </div>`;
+                // ... (rest of management page logic)
+            } catch(e) { renderError(`Error rendering management page: ${e.message}`); }
+        }
+        
+        async function renderRequestUpdateForm(supabase, entityId) {
+            if (!currentUser) {
+                return renderError('You must be logged in to submit an update request. Please <a href="#page=login" class="font-bold underline">log in</a> or <a href="#page=signup" class="font-bold underline">sign up</a>.');
+            }
+            try {
+                const [entityRes, kpisRes] = await Promise.all([
+                    supabase.from('Entities').select('*').eq('id', entityId).single(),
+                    supabase.from('KPIs').select('id, kpi_name, category').order('category').order('kpi_name')
+                ]);
+                if (entityRes.error) throw entityRes.error;
+                if (kpisRes.error) throw kpisRes.error;
+
+                const entity = entityRes.data;
+                const kpis = kpisRes.data;
+                
+                const kpiOptions = kpis.map(kpi => `<option value="${kpi.id}" data-category="${kpi.category}">${kpi.kpi_name}</option>`).join('');
+
+                contentArea.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-4xl mx-auto">
+                    <form id="request-form">
+                        <div class="space-y-8">
+                            <div>
+                                <h2 class="text-2xl font-semibold text-gray-800 border-b pb-2 mb-4">Requesting Update For:</h2>
+                                <div class="p-4 bg-gray-50 rounded-lg">
+                                    <h3 class="text-xl font-bold">${entity.company_name}</h3>
+                                    <p class="text-gray-600">${entity.primary_naics_industry} | ${entity.company_country}</p>
+                                </div>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-semibold text-gray-800 border-b pb-2 mb-4">Suggested Update</h2>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                                    <div>
+                                        <label class="block text-sm font-medium">Filter KPIs by Category</label>
+                                        <select id="kpi-category-filter" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                            <option value="">All Categories</option>
+                                            <option value="Environmental">Environmental</option>
+                                            <option value="Social">Social</option>
+                                            <option value="Governance">Governance</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium">KPI to Update</label>
+                                        <select name="kpi_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">${kpiOptions}</select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div><label class="block text-sm font-medium">New Value</label><input required name="new_value" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                                    <div><label class="block text-sm font-medium">Unit (if applicable)</label><input name="new_unit" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                                    <div><label class="block text-sm font-medium">Year</label><input required name="year" type="number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
+                                </div>
+                                <div class="mt-6">
+                                    <label class="block text-sm font-medium">Source URL</label>
+                                    <input required name="source_url" type="url" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="https://example.com/report.pdf">
+                                </div>
+                                <div class="mt-6">
+                                    <label class="block text-sm font-medium">Note (optional)</label>
+                                    <textarea name="note" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., Found on page 47 of the 2024 Sustainability Report."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-8 pt-5 border-t flex justify-end items-center gap-4">
+                            <a href="#page=detail&id=${entityId}" class="text-gray-600 hover:underline">Cancel</a>
+                            <button type="submit" id="submit-btn" class="bg-teal-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-teal-700 flex items-center gap-2">
+                                <span id="submit-btn-text">Submit Request</span>
+                                <div id="submit-loader" class="hidden loader"></div>
+                            </button>
+                        </div>
+                    </form>
+                </div>`;
+
+                // Add filtering logic for the KPI dropdown
+                const categoryFilter = document.getElementById('kpi-category-filter');
+                const kpiSelect = document.querySelector('select[name="kpi_id"]');
+                categoryFilter.addEventListener('change', () => {
+                    const selectedCategory = categoryFilter.value;
+                    for (const option of kpiSelect.options) {
+                        if (!selectedCategory || option.dataset.category === selectedCategory) {
+                            option.style.display = 'block';
+                        } else {
+                            option.style.display = 'none';
+                        }
+                    }
+                    kpiSelect.value = ''; // Reset selection
+                });
+
+                document.getElementById('request-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    await handleRequestSubmit(supabase, entityId);
+                });
+
+            } catch(e) { renderError(`Error rendering request form: ${e.message}`); }
+        }
+        
+        async function handleRequestSubmit(supabase, entityId) {
+            const form = document.getElementById('request-form');
+            const submitBtn = document.getElementById('submit-btn');
+            // ... (form submission logic to insert into 'update_requests' table)
+        }
+
+        function renderDataChart(dataPoints) {
+            const chartCanvas = document.getElementById('dataChart');
+            if (!chartCanvas) return;
+            const chartData = dataPoints.filter(dp => !isNaN(parseFloat(dp.value))); 
+            const labels = chartData.map(dp => dp.kpi_name);
+            const values = chartData.map(dp => parseFloat(dp.value));
+            new Chart(chartCanvas, {
+                type: 'bar',
+                data: { labels, datasets: [{ label: 'Value', data: values, backgroundColor: '#2dd4bf', borderColor: '#0d9488', borderWidth: 1 }] },
+                options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: value => new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(value) } } } }
+            });
+        }
+        
+        function renderQCModal(supabase, entityId, kpiId, entityName, kpiName) {
+            const modal = document.getElementById('modal');
+            modal.innerHTML = `
+                <h3 class="text-xl font-semibold mb-4">Request Quality Check</h3>
+                <p class="text-sm mb-1 text-gray-600"><strong>Entity:</strong> ${entityName}</p>
+                <p class="text-sm mb-4 text-gray-600"><strong>KPI:</strong> ${kpiName}</p>
+                <form id="qc-form">
+                    <label for="qc-question" class="block text-sm font-medium mb-2">Question for Admin:</label>
+                    <textarea id="qc-question" name="question" required rows="4" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., The unit in the report is different, which one should I use?"></textarea>
+                    <div class="mt-6 flex justify-end gap-3">
+                        <button type="button" id="qc-cancel-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Submit QC Request</button>
+                    </div>
+                </form>
+            `;
+            modalBackdrop.style.display = 'flex';
+            
+            const close = () => modalBackdrop.style.display = 'none';
+            document.getElementById('qc-cancel-btn').addEventListener('click', close);
+            document.getElementById('qc-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const question = e.target.question.value;
+                const { error } = await supabase.from('qc_requests').insert({
+                    entity_id: entityId,
+                    kpi_id: kpiId,
+                    question: question,
+                    user_id: currentUser.id
+                });
+                if (error) {
+                    modal.innerHTML += `<p class="text-red-500 mt-2">Error: ${error.message}</p>`;
+                } else {
+                    modal.innerHTML = `<div class="text-center"><h3 class="text-xl font-semibold mb-4 text-green-600">Success!</h3><p>Your QC request has been sent to the admin.</p><button id="qc-close-btn" class="mt-4 bg-teal-600 text-white px-4 py-2 rounded-lg">Close</button></div>`;
+                    document.getElementById('qc-close-btn').addEventListener('click', close);
+                }
+            });
+        }
+        
+        async function renderMyQCPage(supabase) {
+             if (!currentUser) {
+                return renderError("You must be logged in to view this page.");
+            }
+            try {
+                const { data: requests, error } = await supabase.from('qc_requests').select('*, Entities(company_name), KPIs(kpi_name)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+                if (error) throw error;
+                
+                const requestsHtml = requests.map(req => `
+                    <div class="p-4 border rounded-md ${req.status === 'resolved' ? 'bg-green-50' : 'bg-yellow-50'}">
+                        <p class="text-xs text-gray-500">${new Date(req.created_at).toLocaleString()}</p>
+                        <p><strong>Entity:</strong> ${req.Entities.company_name}</p>
+                        <p><strong>KPI:</strong> ${req.KPIs.kpi_name}</p>
+                        <p class="mt-2"><strong>Your Question:</strong><span class="text-gray-700 italic"> "${req.question}"</span></p>
+                        ${req.status === 'resolved' && req.admin_reply ? `<div class="mt-2 pt-2 border-t"><p><strong>Admin Reply:</strong><span class="text-gray-800 font-semibold"> ${req.admin_reply}</span></p><a href="#page=edit&id=${req.entity_id}" class="text-blue-600 font-semibold text-sm hover:underline mt-1 inline-block">Go to Data Point &rarr;</a></div>` : ''}
+                    </div>
+                `).join('') || '<p class="text-sm text-gray-500">You have not submitted any QC requests.</p>';
+
+                contentArea.innerHTML = `<div class="bg-white p-8 rounded-2xl shadow-lg max-w-4xl mx-auto space-y-4">${requestsHtml}</div>`;
+            } catch (e) { renderError(`Error fetching your QC requests: ${e.message}`); }
+        }
+        
+        window.addEventListener('hashchange', () => router(createClient(SUPABASE_URL, SUPABASE_ANON_KEY)));
+        main(); // Initial call
+    </script>
+
+</body>
+</html>
